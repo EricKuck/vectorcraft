@@ -35,8 +35,8 @@ const DENY: &[&str] = &[
 /// Marks a line that keeps a legacy name on purpose.
 const ALLOW: &str = "brand-ok";
 
-/// This file lists the names it rejects.
-const SELF: &str = "xtask/src/brands.rs";
+/// The gates that list the names they reject.
+const SELF: &[&str] = &["xtask/src/brands.rs", "xtask/src/cleanroom.rs"];
 
 /// A denied name found in a file.
 #[derive(Debug, PartialEq)]
@@ -93,7 +93,11 @@ fn kind_of(path: &str) -> Option<Kind> {
         Some(Kind::Text)
     } else if path == "Cargo.toml" || path.ends_with("/Cargo.toml") {
         Some(Kind::Manifest)
-    } else if path.ends_with(".rs") && ["crates/", "apps/", "xtask/"].iter().any(|d| path.starts_with(d)) && path != SELF && !is_test_path(path) {
+    } else if path.ends_with(".rs")
+        && ["crates/", "apps/", "xtask/"].iter().any(|d| path.starts_with(d))
+        && !SELF.contains(&path)
+        && !is_test_path(path)
+    {
         Some(Kind::Rust)
     } else {
         None
@@ -347,7 +351,9 @@ line Pantone"; }
         assert_eq!(kind_of("crates/tools/src/text_tests.rs"), None);
         assert_eq!(kind_of("crates/color/src/cms/tests.rs"), None);
         assert_eq!(kind_of("crates/engine/tests/command_sweep.rs"), None);
-        assert_eq!(kind_of(SELF), None);
+        for gate in SELF {
+            assert_eq!(kind_of(gate), None);
+        }
         assert_eq!(kind_of("crates/ui-egui/Cargo.toml"), Some(Kind::Manifest));
         assert_eq!(kind_of("docs/brand/LICENSE-brand.txt"), Some(Kind::Text));
         assert_eq!(kind_of("packaging/linux/nfpm.yaml"), Some(Kind::Text));

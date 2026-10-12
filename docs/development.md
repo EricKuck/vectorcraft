@@ -225,6 +225,10 @@ locale resolve to it; plurals use one/few/many, with 21, 31 … taking many), Cz
 
 `cargo xtask brands` (part of `cargo xtask ci`) fails when user-visible text names another vendor's products or company: string literals in Rust sources (command labels and params docs, menus, panels, MCP tool definitions), `Cargo.toml` descriptions and packaging files. Comments and test code are not checked. Say "the reference app" or name the feature itself. A line that must keep an old name, such as an alias that files or preferences from earlier versions still use, carries a `brand-ok` comment.
 
+## Clean-room gate
+
+`cargo xtask cleanroom` (part of `cargo xtask ci`) reads every tracked and new file, binary ones included, and fails on a copyright notice naming Adobe (`Copyright … Adobe`, `© Adobe`, `(c) Adobe`, `Adobe Systems Incorporated`) and on the creator stamp of a file made with an Adobe application (a DSC `%%Creator:` naming Adobe or `%%Title:` naming Adobe Illustrator, a PDF `/Creator (Adobe…` or `/Producer (Adobe…`, an XMP `xmp:CreatorTool` starting with Adobe). Test inputs are written from the public specifications, so neither belongs in the repository. A hand-written line that must keep one, such as a test header that selects an importer's dialect, carries a `cleanroom-ok` comment. Licence texts that must quote a notice verbatim (`NOTICE`, the OFL texts of open-source fonts) are listed in `xtask/src/cleanroom.rs` with the reason.
+
 ## Robustness: VectorCraft never crashes
 
 A crash takes the user's unsaved work with it, and much of what the app reads is untrusted: SVG,

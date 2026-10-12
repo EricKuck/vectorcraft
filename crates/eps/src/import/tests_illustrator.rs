@@ -24,7 +24,7 @@ fn ai(header: &str, ugroup: &str, body: &str) -> Vec<u8> {
 /// A legacy Illustrator format header: the reader takes `u` … `U` as groups only in files whose
 /// header says they are in that format (`%AI…` comments or the creator, which the format's
 /// published specification documents; see the `import` module docs).
-const AI8: &str = "%%Creator: Adobe Illustrator(R) 8.0\n%AI5_FileFormat 4.0\n";
+const AI8: &str = "%%Creator: Adobe Illustrator(R) 8.0\n%AI5_FileFormat 4.0\n"; // cleanroom-ok: a hand-written header
 
 /// A triangle filled at `x`.
 fn tri(x: u32) -> String {
@@ -55,7 +55,7 @@ fn groups_and_nested_groups_come_in_as_groups() {
     assert_eq!(read(AI8, "", &body), ("g[p g[p p]] p".into(), vec![]));
     // Illustrator 3's header names it only as the creator; a prolog whose groups save and restore
     // the graphics state groups the same.
-    assert_eq!(read("%%Creator:Adobe Illustrator(TM) 3.2\n", "gsave", &body).0, "g[p g[p p]] p");
+    assert_eq!(read("%%Creator:Adobe Illustrator(TM) 3.2\n", "gsave", &body).0, "g[p g[p p]] p"); // cleanroom-ok
     // Groups of one object, and groups next to each other.
     assert_eq!(read(AI8, "", &format!("u {} U u {} U", tri(10), tri(30))).0, "g[p] g[p]");
 }

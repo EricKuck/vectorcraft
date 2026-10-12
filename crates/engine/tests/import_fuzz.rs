@@ -1384,7 +1384,7 @@ proptest! {
     /// the editing data reader reads from the program too.
     #[test]
     fn eps_hostile_programs_never_panic(tokens in prop::collection::vec(arb_ps_token(), 0..60), illustrator in any::<bool>(), layers in any::<bool>()) {
-        let head = if illustrator { "%%Creator: Adobe Illustrator(R) 8.0\n%%EndComments\n/u {} def /U {} def" } else { "%%EndComments" };
+        let head = if illustrator { "%%Creator: Adobe Illustrator(R) 8.0\n%%EndComments\n/u {} def /U {} def" } else { "%%EndComments" }; // cleanroom-ok
         let (open, close) = if layers {
             ("/Lb {10 {pop} repeat} def /Ln {pop} def /LB {} def\n%AI5_BeginLayer\n1 1 1 1 0 0 -1 0 0 0 Lb\n(L) Ln\n", "\nLB\n%AI5_EndLayer--")
         } else {

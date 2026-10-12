@@ -93,16 +93,21 @@ fn postscript_ai_files_and_garbage() {
     assert_eq!(s.doc().unwrap().path, None);
     assert_eq!(objects(&s), 1);
     // Illustrator's groups come in as groups, nested as they were.
-    let ai = b"%!PS-Adobe-3.0
-%%Creator: Adobe Illustrator(R) 8.0
+    let creator = "%%Creator: Adobe Illustrator(R) 8.0"; // cleanroom-ok: a hand-written header
+    let ai = [
+        "%!PS-Adobe-3.0\n",
+        creator,
+        "
 %%BoundingBox: 0 0 100 100
 %%EndComments
                /u {} def /U {} def /L {lineto} def /f {closepath fill} def
                u 0 0 moveto 9 0 L 9 9 L f u 20 0 moveto 29 0 L 29 9 L f 40 0 moveto 49 0 L 49 9 L f U U
 showpage
 %%EOF
-";
-    open(&mut s, "groups.ai", ai).unwrap();
+",
+    ]
+    .concat();
+    open(&mut s, "groups.ai", ai.as_bytes()).unwrap();
     let d = s.doc().unwrap().doc.clone();
     let outer = &d.layers[0].children().unwrap()[0];
     let inner = outer.children().map(|c| (c.len(), c[1].children().map(Vec::len))).unwrap();

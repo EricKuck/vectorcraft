@@ -7,6 +7,7 @@ mod affinity_corpus;
 mod assets;
 mod brands;
 mod bundle;
+mod cleanroom;
 mod ico;
 mod layers;
 mod pngsuite;
@@ -24,9 +25,10 @@ usage: cargo xtask <command>
 commands:
   assets          check that every icon/image/font/asset is attributed in ASSETS.md
   brands          check that user-visible text (labels, params docs, MCP, docs, packaging) names no other vendor's products
+  cleanroom       check that no file carries the reference vendor's copyright notice or creator stamp (AGENTS.md › Clean-room)
   layers          enforce the crate dependency layering (plan/architecture.md §3)
   wasm            cargo check --target wasm32-unknown-unknown for the wasm-safe crates and the web app
-  ci              fmt --check, clippy -D warnings, test, assets, brands, layers, wasm (stops at first failure)
+  ci              fmt --check, clippy -D warnings, test, assets, brands, cleanroom, layers, wasm (stops at first failure)
   corpus [--download] [--affinity]
                   show where test corpora live; --download fetches PngSuite into corpus/pngsuite,
                   --affinity the pinned public Affinity documents into corpus/affinity
@@ -44,6 +46,7 @@ fn main() -> ExitCode {
     let result = match args.first().map(String::as_str) {
         Some("assets") => assets::run(&root()),
         Some("brands") => brands::run(&root()),
+        Some("cleanroom") => cleanroom::run(&root()),
         Some("layers") => cmd_layers(),
         Some("wasm") => cmd_wasm(),
         Some("ci") => cmd_ci(),
@@ -202,6 +205,7 @@ fn cmd_ci() -> Result<(), String> {
         ),
         ("assets", Box::new(|| assets::run(&root()))),
         ("brands", Box::new(|| brands::run(&root()))),
+        ("cleanroom", Box::new(|| cleanroom::run(&root()))),
         ("layers", Box::new(cmd_layers)),
         ("wasm", Box::new(cmd_wasm)),
     ];
