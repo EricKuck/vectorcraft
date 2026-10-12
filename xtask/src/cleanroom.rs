@@ -5,8 +5,13 @@
 //! * a copyright notice naming Adobe (`Copyright 2020 Adobe`, `© Adobe`, `(c) Adobe`, `Adobe
 //!   Systems Incorporated`);
 //! * a creator stamp of an Adobe application: a DSC `%%Creator:` naming Adobe or a `%%Title:`
-//!   naming Adobe Illustrator, a PDF `/Creator (Adobe…` or `/Producer (Adobe…`, an XMP
-//!   `xmp:CreatorTool` starting with Adobe.
+//!   naming Adobe Illustrator (at a line's start, or in a string literal at its start or after a
+//!   `\n` or `\r` escape, as an inlined fixture writes it), a PDF `/Creator (Adobe…` or
+//!   `/Producer (Adobe…`, an XMP `xmp:CreatorTool` starting with Adobe.
+//!
+//! Bytes are read as they are stored: text inside compressed PDF streams, and UTF-16 text, isn't
+//! decoded, so a pass doesn't prove a binary fixture clean. Files over [`MAX_BYTES`] and files that
+//! can't be read are listed as not checked.
 //!
 //! A line that has to keep one on purpose (a hand-written header that selects an importer's
 //! dialect) says `cleanroom-ok` on that line; licence texts that must reproduce a notice verbatim
@@ -41,7 +46,10 @@ pub struct Hit {
 
 pub fn run(root: &Path) -> Result<(), String> {
     let files = crate::repo_files(root)?;
-    let hits = scan(root, &files);
+    let (hits, unread) = scan(root, &files);
+    for path in &unread {
+        println!("cleanroom: not checked: {path}");
+    }
     if hits.is_empty() {
         println!("cleanroom: no Adobe copyright notices or Adobe-made files ({} files)", files.len());
         return Ok(());
@@ -54,21 +62,33 @@ pub fn run(root: &Path) -> Result<(), String> {
     ))
 }
 
-/// Every hit in `files` (paths relative to `root`).
-pub fn scan(root: &Path, files: &[String]) -> Vec<Hit> {
-    let mut hits = vec![];
+/// Every hit in `files` (paths relative to `root`), and the files that weren't read (too big or
+/// unreadable).
+pub fn scan(root: &Path, files: &[String]) -> (Vec<Hit>, Vec<String>) {
+    let (mut hits, mut unread) = (vec![], vec![]);
     for path in files {
         if path == SELF || ALLOW_FILES.iter().any(|(p, _)| p == path) {
             continue;
         }
         let full = root.join(path);
-        if std::fs::metadata(&full).map_or(true, |m| !m.is_file() || m.len() > MAX_BYTES) {
+        let Ok(meta) = std::fs::metadata(&full) else {
+            // Listed but gone: a deleted file not yet staged.
+            continue;
+        };
+        if !meta.is_file() {
             continue;
         }
-        let Ok(bytes) = std::fs::read(&full) else { continue };
+        if meta.len() > MAX_BYTES {
+            unread.push(format!("{path} (over {} MB)", MAX_BYTES >> 20));
+            continue;
+        }
+        let Ok(bytes) = std::fs::read(&full) else {
+            unread.push(format!("{path} (unreadable)"));
+            continue;
+        };
         hits.extend(scan_bytes(&bytes).into_iter().map(|(line, what, context)| Hit { path: path.clone(), line, what, context }));
     }
-    hits
+    (hits, unread)
 }
 
 /// (line, what, line text) for each match in `bytes`: lines end at LF, or at CR in a file
@@ -96,9 +116,8 @@ fn finding(l: &str) -> Option<&'static str> {
     {
         return Some("Adobe copyright notice");
     }
-    let t = l.trim_start();
-    let stamp = (t.starts_with("%%creator:") && t.contains("adobe"))
-        || (t.starts_with("%%title:") && t.contains("adobe illustrator"))
+    let stamp = dsc_names(l, "%%creator:", "adobe")
+        || dsc_names(l, "%%title:", "adobe illustrator")
         || ["/creator", "/producer"]
             .iter()
             .any(|k| l.match_indices(k).any(|(i, _)| l.get(i + k.len()..).unwrap_or_default().trim_start().starts_with("(adobe")))
@@ -106,6 +125,18 @@ fn finding(l: &str) -> Option<&'static str> {
             l.get(i + "xmp:creatortool".len()..).unwrap_or_default().trim_start_matches(['=', '"', '\'', '>', ' ']).starts_with("adobe")
         });
     stamp.then_some("made with an Adobe application")
+}
+
+/// Does DSC comment `key` start a line in `l`, or a line of a string literal (after its quote or a
+/// `\n` or `\r` escape), and name `name` before that line ends?
+fn dsc_names(l: &str, key: &str, name: &str) -> bool {
+    l.match_indices(key).any(|(i, _)| {
+        let before = l.get(..i).unwrap_or_default().trim_end_matches([' ', '\t']);
+        let starts = before.is_empty() || before.ends_with("\\n") || before.ends_with("\\r") || before.ends_with('"');
+        let rest = l.get(i + key.len()..).unwrap_or_default();
+        let line = rest.split("\\n").next().unwrap_or_default().split("\\r").next().unwrap_or_default();
+        starts && line.contains(name)
+    })
 }
 
 /// Does `rest` (after a copyright mark) name Adobe once years, marks and punctuation are skipped?
@@ -171,8 +202,13 @@ mod tests {
         for s in stamped {
             assert_eq!(found(s), [(1, "made with an Adobe application")], "{s}");
         }
-        for fine in ["%%Creator: VectorCraft", "/Creator (VectorCraft) % reads Adobe-style DSC", "xmp:CreatorTool=\"VectorCraft\" for Adobe readers"]
-        {
+        for fine in [
+            "%%Creator: VectorCraft",
+            "/Creator (VectorCraft) % reads Adobe-style DSC",
+            "xmp:CreatorTool=\"VectorCraft\" for Adobe readers",
+            "a DSC `%%Creator:` naming Adobe",
+            "let head = \"%%Creator: VectorCraft\\n% read by Adobe-style DSC parsers\";",
+        ] {
             assert!(found(fine).is_empty(), "{fine}");
         }
     }
@@ -185,7 +221,12 @@ mod tests {
         binary.extend_from_slice(b"4 0 obj << /Producer (Adobe PDF Library 15.0) >>\n\x00\xfe");
         assert_eq!(found(&String::from_utf8_lossy(&binary)), [(2, "made with an Adobe application")]);
         assert_eq!(scan_bytes(&binary).len(), 1, "raw bytes, not just text");
-        assert!(found("const AI: &str = \"%%Creator: Adobe Illustrator(R) 8.0\"; // cleanroom-ok\n").is_empty());
+        // A fixture inlined in a string: at the literal's start or after a `\n` escape.
+        let header = "const AI: &str = \"%%Creator: Adobe Illustrator(R) 8.0\\n\";";
+        assert_eq!(found(header), [(1, "made with an Adobe application")]);
+        let later = "let head = \"%%EndComments\\n%%Creator: Adobe Illustrator\\n\";";
+        assert_eq!(found(later), [(1, "made with an Adobe application")]);
+        assert!(found(&format!("{header} // cleanroom-ok")).is_empty());
     }
 
     #[test]
@@ -200,10 +241,11 @@ mod tests {
         file("docs/x.md", b"Written from the spec.\n");
         file("NOTICE", b"Copyright 1990-2023 Adobe. All rights reserved.\n");
         let files: Vec<String> = ["tests/fixtures/x.ai", "docs/x.md", "NOTICE", "missing.pdf"].map(String::from).to_vec();
-        let hits = scan(&dir, &files);
+        let (hits, unread) = scan(&dir, &files);
         let _ = std::fs::remove_dir_all(&dir);
         let found: Vec<(&str, usize)> = hits.iter().map(|h| (h.path.as_str(), h.line)).collect();
         assert_eq!(found, [("tests/fixtures/x.ai", 2)]);
+        assert!(unread.is_empty(), "{unread:?}");
     }
 
     #[test]
@@ -211,7 +253,7 @@ mod tests {
         let root = crate::root();
         // Outside a git checkout there is no file list to check.
         let Ok(files) = crate::repo_files(&root) else { return };
-        let hits = scan(&root, &files);
+        let (hits, _) = scan(&root, &files);
         assert!(hits.is_empty(), "{hits:#?}");
     }
 }
